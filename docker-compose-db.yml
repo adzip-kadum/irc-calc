@@ -1,0 +1,20 @@
+version: '3.3'
+
+services:
+
+  postgres:
+    image: postgis/postgis
+    ports:
+      - "5431:5432"
+    environment:
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=gnsgnsgnsgnsg4225y25sxvbs
+      - POSTGRES_DB=irc_calcs
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart:
+      on-failure
+
