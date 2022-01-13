@@ -34,36 +34,28 @@ type Bot struct {
 	decoder *encoding.Decoder
 }
 
-type (
-	encoderMaker func() *encoding.Encoder
-	decoderMaker func() *encoding.Decoder
-)
-
 var (
-	encoders = map[string]encoderMaker{
-		"windows-1251": func() *encoding.Encoder { return charmap.Windows1251.NewEncoder() },
-		"koi8-r":       func() *encoding.Encoder { return charmap.KOI8R.NewEncoder() },
+	encoders = map[string]*encoding.Encoder{
+		"windows-1251": charmap.Windows1251.NewEncoder(),
+		"koi8-r":       charmap.KOI8R.NewEncoder(),
 	}
-	decoders = map[string]decoderMaker{
-		"windows-1251": func() *encoding.Decoder { return charmap.Windows1251.NewDecoder() },
-		"koi8-r":       func() *encoding.Decoder { return charmap.KOI8R.NewDecoder() },
+	decoders = map[string]*encoding.Decoder{
+		"windows-1251": charmap.Windows1251.NewDecoder(),
+		"koi8-r":       charmap.KOI8R.NewDecoder(),
 	}
 )
 
 func NewBot(conf Config, pool *postgres.PgxPool) (*Bot, error) {
 	bot := &Bot{
-		conf: conf,
-		repo: repository.NewCalcsRepository(pool),
+		conf:    conf,
+		repo:    repository.NewCalcsRepository(pool),
+		encoder: encoders[conf.Encoding],
+		decoder: decoders[conf.Encoding],
 	}
-	encoder := encoders[conf.Encoding]
-	decoder := decoders[conf.Encoding]
 
-	if encoder == nil || decoder == nil {
+	if bot.encoder == nil || bot.decoder == nil {
 		return nil, errors.Errorf("Unknown encoder or decoder for %q", conf.Encoding)
 	}
-
-	bot.encoder = encoder()
-	bot.decoder = decoder()
 
 	return bot, nil
 }
@@ -103,7 +95,12 @@ func (b *Bot) Start() error {
 				irc.Reply(m, fmt.Sprintf("ERROR: %s", err))
 				return false
 			}
-			irc.Reply(m, calc)
+			encodedCalc, err := b.encoder.String(calc)
+			if err != nil {
+				irc.Reply(m, fmt.Sprintf("ERROR: %s", err))
+				return false
+			}
+			irc.Reply(m, encodedCalc)
 			return true
 		}}
 	bot.AddTrigger(trigger)
@@ -159,19 +156,10 @@ func (b *Bot) getCalcByIndex(index string, calcs []repository.IrcCalc) (string, 
 		return "", errors.Errorf("calc index %d out of range, max %d", num, len(calcs)-1)
 	}
 	c := calcs[num]
-	encodedKey, err := b.encoder.String(c.Key)
 	if err != nil {
 		return "", err
 	}
-	encodedContent, err := b.encoder.String(c.Content)
-	if err != nil {
-		return "", err
-	}
-	encodedBy, err := b.encoder.String(c.By)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%s = %s [%s, %s]", encodedKey, encodedContent, encodedBy, formatTime(c.When)), nil
+	return fmt.Sprintf("%s = %s [%s, %s]", c.Key, c.Content, c.By, formatTime(c.When)), nil
 }
 
 func (b *Bot) setCalc(by string, when time.Time, data []string) (string, error) {
